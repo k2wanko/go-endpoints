@@ -11,8 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/net/context"
-
 	"appengine/aetest"
 )
 
@@ -77,7 +75,7 @@ func (s *ServerTestService) MsgWithRequest(r *http.Request, req, resp *TestMsg) 
 	return nil
 }
 
-func (s *ServerTestService) MsgWithContext(c context.Context, req, resp *TestMsg) error {
+func (s *ServerTestService) MsgWithContext(c Context, req, resp *TestMsg) error {
 	if c == nil {
 		return errors.New("MsgWithContext: c = nil")
 	}
@@ -85,28 +83,28 @@ func (s *ServerTestService) MsgWithContext(c context.Context, req, resp *TestMsg
 	return nil
 }
 
-func (s *ServerTestService) MsgWithReturn(c context.Context, req *TestMsg) (*TestMsg, error) {
+func (s *ServerTestService) MsgWithReturn(c Context, req *TestMsg) (*TestMsg, error) {
 	if c == nil {
 		return nil, errors.New("MsgWithReturn: c = nil")
 	}
 	return &TestMsg{req.Name}, nil
 }
 
-func (s *ServerTestService) MsgWithoutRequest(c context.Context) (*TestMsg, error) {
+func (s *ServerTestService) MsgWithoutRequest(c Context) (*TestMsg, error) {
 	if c == nil {
 		return nil, errors.New("MsgWithoutRequest: c = nil")
 	}
 	return &TestMsg{}, nil
 }
 
-func (s *ServerTestService) MsgWithoutResponse(c context.Context, req *TestMsg) error {
+func (s *ServerTestService) MsgWithoutResponse(c Context, req *TestMsg) error {
 	if c == nil {
 		return errors.New("MsgWithoutResponse: c = nil")
 	}
 	return nil
 }
 
-func (s *ServerTestService) MsgWithoutRequestNorResponse(c context.Context) error {
+func (s *ServerTestService) MsgWithoutRequestNorResponse(c Context) error {
 	if c == nil {
 		return errors.New("MsgWithoutRequestNorResponse: c = nil")
 	}
@@ -202,6 +200,11 @@ func TestServerServeHTTP(t *testing.T) {
 		// do the fake request
 		server.ServeHTTP(w, r)
 
+		// verify endpoints.context has been destroyed
+		if c, exists := ctxs[r]; exists {
+			t.Errorf("%d: ctxs[%#v] = %#v; want nil", i, r, c)
+		}
+
 		// make sure the response is correct
 		out := strings.TrimSpace(w.Body.String())
 		if tt.code == http.StatusOK && out != tt.out {
@@ -276,6 +279,28 @@ func TestServerRegisterService(t *testing.T) {
 		if m.wantsContext != tt.wantsContext {
 			t.Errorf("%d: wantsContext = %v; want %v", i, m.wantsContext, tt.wantsContext)
 		}
+	}
+}
+
+func TestServerMustRegisterService(t *testing.T) {
+	s := NewServer("")
+
+	var panicked interface{}
+	func() {
+		defer func() { panicked = recover() }()
+		Must(s.RegisterService(&ServerTestService{}, "ServerTestService", "v1", "", true))
+	}()
+	if panicked != nil {
+		t.Fatalf("unexpected panic: %v", panicked)
+	}
+
+	type badService struct{}
+	func() {
+		defer func() { panicked = recover() }()
+		Must(s.RegisterService(&badService{}, "BadService", "v1", "", true))
+	}()
+	if panicked == nil {
+		t.Fatalf("expected panic didn't occur")
 	}
 }
 

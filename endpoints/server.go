@@ -14,8 +14,6 @@ import (
 	"strings"
 	// Mainly for debug logging
 	"io/ioutil"
-
-	"google.golang.org/appengine/log"
 )
 
 // Server serves registered RPC services using registered codecs.
@@ -69,6 +67,18 @@ func (s *Server) RegisterServiceWithDefaults(srv interface{}) (*RPCService, erro
 	return s.RegisterService(srv, "", "", "", true)
 }
 
+// Must is a helper that wraps a call to a function returning (*Template, error) and
+// panics if the error is non-nil. It is intended for use in variable initializations
+// such as:
+// 	var s = endpoints.Must(endpoints.RegisterService(s, "Service", "v1", "some service", true))
+//
+func Must(s *RPCService, err error) *RPCService {
+	if err != nil {
+		panic(err)
+	}
+	return s
+}
+
 // ServiceByName returns a registered service or nil if there's no service
 // registered by that name.
 func (s *Server) ServiceByName(serviceName string) *RPCService {
@@ -87,6 +97,9 @@ func (s *Server) HandleHTTP(mux *http.ServeMux) {
 // ServeHTTP is Server's implementation of http.Handler interface.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c := NewContext(r)
+	defer func() {
+		destroyContext(c)
+	}()
 
 	// Always respond with JSON, even when an error occurs.
 	// Note: API server doesn't expect an encoding in Content-Type header.
@@ -123,7 +136,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	log.Debugf(c, "SPI request body: %s", body)
+	c.Debugf("SPI request body: %s", body)
 
 	// if err := json.NewDecoder(r.Body).Decode(req.Interface()); err != nil {
 	// 	writeError(w, fmt.Errorf("Error while decoding JSON: %q", err))
